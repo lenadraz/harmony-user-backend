@@ -143,7 +143,89 @@ app.get("/test-unmet", async (req, res) => {
     });
   }
 });
+// ===== SAVE =====
+app.post("/api/save", async (req, res) => {
+  try {
+    const { userId, targetId } = req.body;
 
+    const { resource } = await container.item(userId, "event1").read();
+
+    resource.saved = resource.saved || [];
+
+    if (!resource.saved.includes(targetId)) {
+      resource.saved.push(targetId);
+    }
+
+    const { resource: updated } = await container
+      .item(userId, "event1")
+      .replace(resource);
+
+    res.json({ saved: updated.saved });
+  } catch (error) {
+    res.status(500).json({
+      message: "Save failed",
+      error: error.message,
+    });
+  }
+});
+
+// ===== MET =====
+app.post("/api/met", async (req, res) => {
+  try {
+    const { userId, targetId } = req.body;
+
+    const { resource } = await container.item(userId, "event1").read();
+
+    resource.met = resource.met || [];
+
+    if (!resource.met.includes(targetId)) {
+      resource.met.push(targetId);
+    }
+
+    const { resource: updated } = await container
+      .item(userId, "event1")
+      .replace(resource);
+
+    res.json({ met: updated.met });
+  } catch (error) {
+    res.status(500).json({
+      message: "Met failed",
+      error: error.message,
+    });
+  }
+});
+
+// ===== GET SAVED =====
+app.get("/api/saved/:id", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const { resource } = await container.item(userId, "event1").read();
+
+    res.json(resource.saved || []);
+  } catch (error) {
+    res.status(500).json({
+      message: "Fetch saved failed",
+      error: error.message,
+    });
+  }
+});
+
+// ===== GET MET =====
+app.get("/api/met/:id", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const { resource } = await container.item(userId, "event1").read();
+
+    res.json(resource.met || []);
+  } catch (error) {
+    res.status(500).json({
+      message: "Fetch met failed",
+      error: error.message,
+    });
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
