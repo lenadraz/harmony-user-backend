@@ -146,14 +146,20 @@ app.get("/test-unmet", async (req, res) => {
 // ===== SAVE =====
 app.post("/api/save", async (req, res) => {
   try {
-    const { userId, targetId } = req.body;
+    const { userId, targetId, remove } = req.body;
 
     const { resource } = await container.item(userId, "event1").read();
 
     resource.saved = resource.saved || [];
 
-    if (!resource.saved.includes(targetId)) {
-      resource.saved.push(targetId);
+    if (remove) {
+      // ❌ REMOVE
+      resource.saved = resource.saved.filter(id => id !== targetId);
+    } else {
+      // ➕ ADD
+      if (!resource.saved.includes(targetId)) {
+        resource.saved.push(targetId);
+      }
     }
 
     const { resource: updated } = await container
@@ -172,14 +178,20 @@ app.post("/api/save", async (req, res) => {
 // ===== MET =====
 app.post("/api/met", async (req, res) => {
   try {
-    const { userId, targetId } = req.body;
+    const { userId, targetId, remove } = req.body;
 
     const { resource } = await container.item(userId, "event1").read();
 
     resource.met = resource.met || [];
 
-    if (!resource.met.includes(targetId)) {
-      resource.met.push(targetId);
+    if (remove) {
+      // ❌ REMOVE
+      resource.met = resource.met.filter(id => id !== targetId);
+    } else {
+      // ➕ ADD
+      if (!resource.met.includes(targetId)) {
+        resource.met.push(targetId);
+      }
     }
 
     const { resource: updated } = await container
