@@ -39,11 +39,11 @@ function mapParticipant(participant) {
     professional: participant.professional || "",
     personal: participant.personal || "",
     image: participant.image || participant.thumbnail_url || "",
+    hidden: Boolean(participant.hidden),
     saved: participant.saved || [],
     met: participant.met || [],
   };
 }
-
 // helper: מביא משתתף לפי id
 async function getParticipantById(id) {
   const querySpec = {
