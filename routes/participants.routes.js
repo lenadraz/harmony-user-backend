@@ -196,13 +196,15 @@ router.put("/:id", async (req, res) => {
     }
 
     // phone stays unchanged on purpose
+const partitionKey = participant.event_id;
 
-    const partitionKey = participant.event_id || participant.id
+if (!partitionKey) {
+  throw new Error("Missing partition key (event_id)");
+}
 
 const { resource: updated } = await container
   .item(participant.id, partitionKey)
-  .replace(participant)
-
+  .replace(participant);
     return res.json({
       message: "Profile updated successfully",
       participant: mapParticipant(updated),
@@ -423,11 +425,15 @@ router.delete("/:id/save/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-    const partitionKey = participant.event_id || participant.id
+   const partitionKey = participant.event_id;
+
+if (!partitionKey) {
+  throw new Error("Missing partition key (event_id)");
+}
 
 const { resource: updated } = await container
   .item(participant.id, partitionKey)
-  .replace(participant)
+  .replace(participant);
     return res.json({
       message: "Removed from saved successfully",
       saved: updated.saved,
@@ -466,11 +472,15 @@ router.post("/:id/met/:targetId", async (req, res) => {
     if (!participant.met.includes(targetId)) {
       participant.met.push(targetId);
     }
-const partitionKey = participant.event_id || participant.id
+const partitionKey = participant.event_id;
+
+if (!partitionKey) {
+  throw new Error("Missing partition key (event_id)");
+}
 
 const { resource: updated } = await container
   .item(participant.id, partitionKey)
-  .replace(participant)
+  .replace(participant);replace(participant)
 
     return res.json({
       message: "Met saved successfully",
