@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { container } = require("../config/db");
+
 function cleanText(text) {
-  if (text === null || text === undefined) return ''
-  return String(text).trim().replace(/\s+/g, ' ')
+  if (text === null || text === undefined) return "";
+  return String(text).trim().replace(/\s+/g, " ");
 }
 
 function normalizePhone(value) {
@@ -48,18 +49,28 @@ function mapParticipant(participant) {
     met: participant.met || [],
   };
 }
+
 // helper: מביא משתתף לפי id
 async function getParticipantById(id) {
   const querySpec = {
     query: "SELECT * FROM c WHERE c.id = @id",
     parameters: [{ name: "@id", value: id }],
   };
-  function cleanText(value) {
-  return String(value || "").trim();
-}
 
   const { resources } = await container.items.query(querySpec).fetchAll();
   return resources[0] || null;
+}
+
+// helper: replace אחיד ובטוח
+async function replaceParticipant(participant) {
+  const partitionKey =
+    participant.event_id !== undefined ? participant.event_id : undefined;
+
+  const { resource } = await container
+    .item(participant.id, partitionKey)
+    .replace(participant);
+
+  return resource;
 }
 
 // helper: מביא משתתף לפי טלפון
@@ -79,7 +90,7 @@ async function getParticipantByPhone(phone) {
 
   // fallback - אם ב-DB נשמר בפורמט אחר
   const allQuery = {
-    query: "SELECT * FROM c"
+    query: "SELECT * FROM c",
   };
 
   const { resources: allParticipants } = await container.items.query(allQuery).fetchAll();
@@ -107,7 +118,7 @@ async function getParticipantsByIds(ids) {
 router.get("/", async (req, res) => {
   try {
     const querySpec = {
-      query: "SELECT * FROM c"
+      query: "SELECT * FROM c",
     };
 
     const { resources } = await container.items.query(querySpec).fetchAll();
@@ -123,7 +134,6 @@ router.get("/", async (req, res) => {
     });
   }
 });
-
 
 // Get participant by phone
 router.get("/phone/:phone", async (req, res) => {
@@ -171,6 +181,7 @@ router.get("/number/:num", async (req, res) => {
     });
   }
 });
+
 // UPDATE participant profile
 router.put("/:id", async (req, res) => {
   try {
@@ -196,15 +207,8 @@ router.put("/:id", async (req, res) => {
     }
 
     // phone stays unchanged on purpose
-const partitionKey = participant.id;
+    const updated = await replaceParticipant(participant);
 
-if (!partitionKey) {
-  throw new Error("Missing partition key (event_id)");
-}
-
-const { resource: updated } = await container
-  .item(participant.id, partitionKey)
-  .replace(participant);
     return res.json({
       message: "Profile updated successfully",
       participant: mapParticipant(updated),
@@ -218,6 +222,7 @@ const { resource: updated } = await container
     });
   }
 });
+
 // HIDE / UNHIDE participant profile
 router.patch("/:id/privacy", async (req, res) => {
   try {
@@ -229,9 +234,7 @@ router.patch("/:id/privacy", async (req, res) => {
 
     participant.hidden = Boolean(req.body.hidden);
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: participant.hidden
@@ -247,6 +250,7 @@ router.patch("/:id/privacy", async (req, res) => {
     });
   }
 });
+
 // DELETE participant personal data
 router.delete("/:id", async (req, res) => {
   try {
@@ -264,9 +268,7 @@ router.delete("/:id", async (req, res) => {
     participant.image = "";
     participant.hidden = true;
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Participant data removed successfully",
@@ -393,9 +395,7 @@ router.post("/:id/save/:targetId", async (req, res) => {
       participant.saved.push(targetId);
     }
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Saved successfully",
@@ -425,15 +425,8 @@ router.delete("/:id/save/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-   const partitionKey = participant.id;
+    const updated = await replaceParticipant(participant);
 
-if (!partitionKey) {
-  throw new Error("Missing partition key (event_id)");
-}
-
-const { resource: updated } = await container
-  .item(participant.id, partitionKey)
-  .replace(participant);
     return res.json({
       message: "Removed from saved successfully",
       saved: updated.saved,
@@ -472,15 +465,8 @@ router.post("/:id/met/:targetId", async (req, res) => {
     if (!participant.met.includes(targetId)) {
       participant.met.push(targetId);
     }
-const partitionKey = participant.id;
 
-if (!partitionKey) {
-  throw new Error("Missing partition key (event_id)");
-}
-
-const { resource: updated } = await container
-  .item(participant.id, partitionKey)
-  .replace(participant);replace(participant)
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Met saved successfully",
@@ -510,9 +496,7 @@ router.delete("/:id/met/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Removed from met successfully",
