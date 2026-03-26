@@ -196,7 +196,7 @@ router.put("/:id", async (req, res) => {
     }
 
     // phone stays unchanged on purpose
-const partitionKey = participant.event_id;
+const partitionKey = participant.id;
 
 if (!partitionKey) {
   throw new Error("Missing partition key (event_id)");
@@ -425,7 +425,7 @@ router.delete("/:id/save/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-   const partitionKey = participant.event_id;
+   const partitionKey = participant.id;
 
 if (!partitionKey) {
   throw new Error("Missing partition key (event_id)");
@@ -472,7 +472,7 @@ router.post("/:id/met/:targetId", async (req, res) => {
     if (!participant.met.includes(targetId)) {
       participant.met.push(targetId);
     }
-const partitionKey = participant.event_id;
+const partitionKey = participant.id;
 
 if (!partitionKey) {
   throw new Error("Missing partition key (event_id)");
