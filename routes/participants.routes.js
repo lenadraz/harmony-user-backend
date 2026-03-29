@@ -2,6 +2,11 @@ const express = require("express");
 const router = express.Router();
 const { container } = require("../config/db");
 
+function cleanText(text) {
+  if (text === null || text === undefined) return "";
+  return String(text).trim().replace(/\s+/g, " ");
+}
+
 function normalizePhone(value) {
   if (!value) return "";
 
@@ -39,6 +44,7 @@ function mapParticipant(participant) {
     professional: participant.professional || "",
     personal: participant.personal || "",
     image: participant.image || participant.thumbnail_url || "",
+    hidden: Boolean(participant.hidden),
     saved: participant.saved || [],
     met: participant.met || [],
   };
@@ -53,6 +59,18 @@ async function getParticipantById(id) {
 
   const { resources } = await container.items.query(querySpec).fetchAll();
   return resources[0] || null;
+}
+
+// helper: replace אחיד ובטוח
+async function replaceParticipant(participant) {
+  const partitionKey =
+    participant.event_id !== undefined ? participant.event_id : undefined;
+
+  const { resource } = await container
+    .item(participant.id, partitionKey)
+    .replace(participant);
+
+  return resource;
 }
 
 // helper: מביא משתתף לפי טלפון
@@ -72,7 +90,7 @@ async function getParticipantByPhone(phone) {
 
   // fallback - אם ב-DB נשמר בפורמט אחר
   const allQuery = {
-    query: "SELECT * FROM c"
+    query: "SELECT * FROM c",
   };
 
   const { resources: allParticipants } = await container.items.query(allQuery).fetchAll();
@@ -100,7 +118,7 @@ async function getParticipantsByIds(ids) {
 router.get("/", async (req, res) => {
   try {
     const querySpec = {
-      query: "SELECT * FROM c"
+      query: "SELECT * FROM c",
     };
 
     const { resources } = await container.items.query(querySpec).fetchAll();
@@ -159,6 +177,107 @@ router.get("/number/:num", async (req, res) => {
     console.error("Get participant by number error:", error.message);
     return res.status(500).json({
       message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// UPDATE participant profile
+router.put("/:id", async (req, res) => {
+  try {
+    const participant = await getParticipantById(req.params.id);
+
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    const allowedFields = [
+      "name",
+      "job",
+      "academic",
+      "professional",
+      "personal",
+      "image",
+    ];
+
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        participant[field] = cleanText(req.body[field]);
+      }
+    }
+
+    // phone stays unchanged on purpose
+    const updated = await replaceParticipant(participant);
+
+    return res.json({
+      message: "Profile updated successfully",
+      participant: mapParticipant(updated),
+      refreshMatches: true,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error.message);
+    return res.status(500).json({
+      message: "Update profile failed",
+      error: error.message,
+    });
+  }
+});
+
+// HIDE / UNHIDE participant profile
+router.patch("/:id/privacy", async (req, res) => {
+  try {
+    const participant = await getParticipantById(req.params.id);
+
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    participant.hidden = Boolean(req.body.hidden);
+
+    const updated = await replaceParticipant(participant);
+
+    return res.json({
+      message: participant.hidden
+        ? "Profile hidden successfully"
+        : "Profile is visible again",
+      participant: mapParticipant(updated),
+    });
+  } catch (error) {
+    console.error("Privacy update error:", error.message);
+    return res.status(500).json({
+      message: "Privacy update failed",
+      error: error.message,
+    });
+  }
+});
+
+// DELETE participant personal data
+router.delete("/:id", async (req, res) => {
+  try {
+    const participant = await getParticipantById(req.params.id);
+
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    participant.name = "";
+    participant.job = "";
+    participant.academic = "";
+    participant.professional = "";
+    participant.personal = "";
+    participant.image = "";
+    participant.hidden = true;
+
+    const updated = await replaceParticipant(participant);
+
+    return res.json({
+      message: "Participant data removed successfully",
+      participant: mapParticipant(updated),
+    });
+  } catch (error) {
+    console.error("Delete participant data error:", error.message);
+    return res.status(500).json({
+      message: "Delete participant data failed",
       error: error.message,
     });
   }
@@ -276,9 +395,7 @@ router.post("/:id/save/:targetId", async (req, res) => {
       participant.saved.push(targetId);
     }
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Saved successfully",
@@ -308,9 +425,7 @@ router.delete("/:id/save/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Removed from saved successfully",
@@ -351,9 +466,7 @@ router.post("/:id/met/:targetId", async (req, res) => {
       participant.met.push(targetId);
     }
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Met saved successfully",
@@ -383,9 +496,7 @@ router.delete("/:id/met/:targetId", async (req, res) => {
       (item) => item !== targetId
     );
 
-    const { resource: updated } = await container
-      .item(participant.id, participant.event_id)
-      .replace(participant);
+    const updated = await replaceParticipant(participant);
 
     return res.json({
       message: "Removed from met successfully",
