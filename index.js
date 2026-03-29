@@ -238,6 +238,33 @@ app.post("/api/met", async (req, res) => {
     });
   }
 });
+app.post('/api/participants', async (req, res) => {
+  try {
+    const body = req.body
+
+    const newParticipant = {
+      id: `p${Date.now()}`,
+      name: body.name || '',
+      phone: body.phone || '',
+      job: body.job || '',
+      academic: body.academic || '',
+      professional: body.professional || '',
+      personal: body.personal || '',
+      imageUrl: body.imageUrl || '',
+    }
+
+    await container.items.create(newParticipant)
+
+    res.status(201).json({
+      participant: newParticipant
+    })
+  } catch (error) {
+    res.status(500).json({
+      message: 'Create participant failed',
+      error: error.message
+    })
+  }
+})
 
 app.get("/api/saved/:id", async (req, res) => {
   try {
