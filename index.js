@@ -250,18 +250,17 @@ app.post('/api/participants', async (req, res) => {
       academic: body.academic || '',
       professional: body.professional || '',
       personal: body.personal || '',
-      imageUrl: body.imageUrl || '',
+      image: body.image || '',
+      hidden: false,
     }
 
     await container.items.create(newParticipant)
 
-    res.status(201).json({
-      participant: newParticipant
-    })
+    res.status(201).json({ participant: newParticipant })
   } catch (error) {
     res.status(500).json({
       message: 'Create participant failed',
-      error: error.message
+      error: error.message,
     })
   }
 })
