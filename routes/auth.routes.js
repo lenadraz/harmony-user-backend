@@ -26,53 +26,58 @@ function normalizePhone(value) {
   return s;
 }
 
-router.post("/login", async (req, res) => {
+router.post("/phone-login", async (req, res) => {
   try {
-    const { phone } = req.body;
+    const phone = req.body.phone || req.body.phoneNumber;
 
     if (!phone) {
       return res.status(400).json({
-        message: "phone is required"
+        message: "phone is required",
       });
     }
 
     const normalizedPhone = normalizePhone(phone);
 
-    // ניסיון ראשון - חיפוש ישיר
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.phone = @phone",
-      parameters: [
-        { name: "@phone", value: normalizedPhone }
-      ]
+      query: "SELECT TOP 1 * FROM c WHERE c.phoneNumber = @phoneNumber",
+      parameters: [{ name: "@phoneNumber", value: normalizedPhone }],
     };
 
-    const { resources } = await container.items.query(querySpec).fetchAll();
+    const { resources } = await container.items
+      .query(querySpec, { enableCrossPartitionQuery: true })
+      .fetchAll();
 
     let participant = resources[0];
 
-    // fallback אם הפורמט שונה ב-DB
     if (!participant) {
       const allQuery = { query: "SELECT * FROM c" };
-      const { resources: allParticipants } =
-        await container.items.query(allQuery).fetchAll();
+      const { resources: allParticipants } = await container.items
+        .query(allQuery, { enableCrossPartitionQuery: true })
+        .fetchAll();
 
       participant = allParticipants.find(
-        (p) => normalizePhone(p.phone) === normalizedPhone
+        (p) => normalizePhone(p.phoneNumber) === normalizedPhone
       );
     }
 
     if (!participant) {
       return res.status(404).json({
-        message: "Participant not found"
+        message: "Participant not found",
       });
     }
 
-    return res.json(participant);
+    return res.json({
+      ok: true,
+      participantId: participant.id,
+      docId: participant.id,
+      phoneNumber: normalizePhone(participant.phoneNumber),
+      name: participant.name || "",
+    });
   } catch (error) {
     console.error("Login error:", error.message);
     return res.status(500).json({
       message: "Server error",
-      error: error.message
+      error: error.message,
     });
   }
 });
