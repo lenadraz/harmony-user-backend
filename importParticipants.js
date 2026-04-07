@@ -1,5 +1,6 @@
 require("dotenv").config();
 const xlsx = require("xlsx");
+const crypto = require("crypto");
 const { CosmosClient } = require("@azure/cosmos");
 
 const client = new CosmosClient({
@@ -14,10 +15,7 @@ async function importExcel() {
   try {
     const workbook = xlsx.readFile("Harmony Network.xlsx");
 
-    // בוחרים את ה-sheet הרצוי
-    console.log(workbook.SheetNames);
     const sheetName = "Volunteers - Dec25";
-    
     const worksheet = workbook.Sheets[sheetName];
 
     if (!worksheet) {
@@ -30,26 +28,20 @@ async function importExcel() {
       const row = rows[index];
 
       const participant = {
-        id: `p${index + 1}`,
-        event_id: "event1",
-        participantNumber: index + 1, // שורה 2 = 1
-        fullName: row["الاسم"] || "",
-        profileLink: row["الرابط"] || "",
-        imageUrl: row["Unnamed: 1"] || "",
-        gender: row["Gender"] || "",
-        birthDate: row["Birth Date"] || "",
-        originCountry: row["Origin Country"] || "",
-        currentCountry: row["Current Country"] || "",
-        careerType: row["Career Type"] || "",
-        jobTitle: row["Job Title"] || "",
-        academicResume: row["Academic Resume"] || "",
-        professionalResume: row["Professional Resume"] || "",
-        personalResume: row["Personal Resume"] || "",
-        newSkills: row["New Skills"] || "",
-        funFact: row["Fun Fact"] || "",
-        saved: [],
-        met: [],
-        matches: []
+        id: crypto.randomUUID(),
+        eventId: row["eventId"] || "",
+        rowNumber: index + 1,
+        name: row["الاسم الكامل"] || row["الاسم"] || "",
+        phoneNumber: String(
+          row["phone"] || row["Phone"] || row["رقم الهاتف"] || ""
+        ).replace(/[^\d]/g, ""),
+        jobTitle: row["تعريف مهني"] || row["Job Title"] || "",
+        academicResume: row["السيرة الأكاديمية"] || row["Academic Resume"] || "",
+        professionalResume: row["السيرة المهنية"] || row["Professional Resume"] || "",
+        personalResume: row["السيرة الشخصية"] || row["Personal Resume"] || "",
+        iWantToMeet: row["تود التعارف مع"] || row["I Want To Meet"] || "",
+        photoUrl: row["thumbnail_url"] || row["Unnamed: 1"] || "",
+        rawData: row,
       };
 
       await container.items.upsert(participant);
