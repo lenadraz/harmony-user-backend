@@ -36,36 +36,36 @@ function mapParticipant(participant) {
   if (!participant) return null;
 
   return {
-  id: participant.id,
-  eventId: participant.eventId || null,
-  rowNumber: participant.rowNumber || 0,
-  name: participant.name || "",
+    id: participant.id,
+    eventId: participant.eventId || null,
+    rowNumber: participant.rowNumber || 0,
+    name: participant.name || "",
 
-phoneNumber: normalizePhone(participant.phoneNumber),
-  phone: normalizePhone(participant.phoneNumber),
+    phoneNumber: normalizePhone(participant.phoneNumber),
+    phone: normalizePhone(participant.phoneNumber),
 
-  jobTitle: participant.jobTitle || "",
-  job: participant.jobTitle || "",
+    jobTitle: participant.jobTitle || "",
+    job: participant.jobTitle || "",
 
-  academicResume: participant.academicResume || "",
-  academic: participant.academicResume || "",
+    academicResume: participant.academicResume || "",
+    academic: participant.academicResume || "",
 
-  professionalResume: participant.professionalResume || "",
-  professional: participant.professionalResume || "",
+    professionalResume: participant.professionalResume || "",
+    professional: participant.professionalResume || "",
 
-  personalResume: participant.personalResume || "",
-  personal: participant.personalResume || "",
+    personalResume: participant.personalResume || "",
+    personal: participant.personalResume || "",
 
-  iWantToMeet: participant.iWantToMeet || "",
+    iWantToMeet: participant.iWantToMeet || "",
 
-  photoUrl: participant.photoUrl || "",
-  image: participant.photoUrl || "",
+    photoUrl: participant.photoUrl || "",
+    image: participant.photoUrl || "",
 
-  rawData: participant.rawData || {},
-  hidden: Boolean(participant.hidden),
-  saved: participant.saved || [],
-  met: participant.met || [],
-};
+    rawData: participant.rawData || {},
+    hidden: Boolean(participant.hidden),
+    saved: participant.saved || [],
+    met: participant.met || [],
+  };
 }
 
 async function getParticipantById(id) {
@@ -131,6 +131,33 @@ async function getParticipantsByIds(ids) {
     .fetchAll();
 
   return resources;
+}
+
+async function triggerMatchingRebuild(participantId) {
+  const baseUrl = process.env.MATCHING_BACKEND_URL;
+
+  if (!baseUrl) {
+    throw new Error("Missing MATCHING_BACKEND_URL in environment variables");
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/match/rebuild/${participantId}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Matching rebuild failed: ${response.status} ${text}`);
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return { ok: true };
+  }
 }
 
 // Get all participants
@@ -212,12 +239,12 @@ router.post("/", async (req, res) => {
       rowNumber: body.rowNumber || 0,
       name: body.name || "",
       phoneNumber: normalizePhone(body.phoneNumber || body.phone || ""),
-      jobTitle: body.jobTitle || "",
-      academicResume: body.academicResume || "",
-      professionalResume: body.professionalResume || "",
-      personalResume: body.personalResume || "",
+      jobTitle: body.jobTitle || body.job || "",
+      academicResume: body.academicResume || body.academic || "",
+      professionalResume: body.professionalResume || body.professional || "",
+      personalResume: body.personalResume || body.personal || "",
       iWantToMeet: body.iWantToMeet || "",
-      photoUrl: body.photoUrl || "",
+      photoUrl: body.photoUrl || body.image || "",
       rawData: body.rawData || {},
       hidden: false,
       saved: [],
@@ -226,8 +253,11 @@ router.post("/", async (req, res) => {
 
     await container.items.create(newParticipant);
 
+    await triggerMatchingRebuild(newParticipant.id);
+
     return res.status(201).json({
       participant: mapParticipant(newParticipant),
+      refreshMatches: true,
     });
   } catch (error) {
     return res.status(500).json({
@@ -247,33 +277,47 @@ router.put("/:id", async (req, res) => {
     }
 
     const fieldMap = {
-  name: "name",
+      name: "name",
 
-  job: "jobTitle",
-  jobTitle: "jobTitle",
+      phone: "phoneNumber",
+      phoneNumber: "phoneNumber",
 
-  academic: "academicResume",
-  academicResume: "academicResume",
+      job: "jobTitle",
+      jobTitle: "jobTitle",
 
-  professional: "professionalResume",
-  professionalResume: "professionalResume",
+      academic: "academicResume",
+      academicResume: "academicResume",
 
-  personal: "personalResume",
-  personalResume: "personalResume",
+      professional: "professionalResume",
+      professionalResume: "professionalResume",
 
-  image: "photoUrl",
-  photoUrl: "photoUrl",
+      personal: "personalResume",
+      personalResume: "personalResume",
 
-  iWantToMeet: "iWantToMeet",
-};
+      image: "photoUrl",
+      photoUrl: "photoUrl",
+
+      iWantToMeet: "iWantToMeet",
+
+      eventId: "eventId",
+      rowNumber: "rowNumber",
+    };
 
     for (const [bodyField, docField] of Object.entries(fieldMap)) {
       if (Object.prototype.hasOwnProperty.call(req.body, bodyField)) {
-        participant[docField] = cleanText(req.body[bodyField]);
+        if (docField === "phoneNumber") {
+          participant[docField] = normalizePhone(req.body[bodyField]);
+        } else if (docField === "rowNumber") {
+          participant[docField] = Number(req.body[bodyField]) || 0;
+        } else {
+          participant[docField] = cleanText(req.body[bodyField]);
+        }
       }
     }
 
     const updated = await replaceParticipant(participant);
+
+    await triggerMatchingRebuild(updated.id);
 
     return res.json({
       message: "Profile updated successfully",
