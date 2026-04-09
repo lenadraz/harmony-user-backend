@@ -32,46 +32,57 @@ function normalizePhone(value) {
   return s;
 }
 
+function getEventIdFromRequest(req) {
+  return String(req.query.eventId || req.body.eventId || "").trim();
+}
+
 function mapParticipant(participant) {
   if (!participant) return null;
 
   return {
-  id: participant.id,
-  eventId: participant.eventId || null,
-  rowNumber: participant.rowNumber || 0,
-  name: participant.name || "",
+    id: participant.id,
+    eventId: participant.eventId || null,
+    rowNumber: participant.rowNumber || 0,
+    name: participant.name || "",
 
-phoneNumber: normalizePhone(participant.phoneNumber),
-  phone: normalizePhone(participant.phoneNumber),
+    phoneNumber: normalizePhone(participant.phoneNumber),
+    phone: normalizePhone(participant.phoneNumber),
 
-  jobTitle: participant.jobTitle || "",
-  job: participant.jobTitle || "",
+    jobTitle: participant.jobTitle || "",
+    job: participant.jobTitle || "",
 
-  academicResume: participant.academicResume || "",
-  academic: participant.academicResume || "",
+    academicResume: participant.academicResume || "",
+    academic: participant.academicResume || "",
 
-  professionalResume: participant.professionalResume || "",
-  professional: participant.professionalResume || "",
+    professionalResume: participant.professionalResume || "",
+    professional: participant.professionalResume || "",
 
-  personalResume: participant.personalResume || "",
-  personal: participant.personalResume || "",
+    personalResume: participant.personalResume || "",
+    personal: participant.personalResume || "",
 
-  iWantToMeet: participant.iWantToMeet || "",
+    iWantToMeet: participant.iWantToMeet || "",
 
-  photoUrl: participant.photoUrl || "",
-  image: participant.photoUrl || "",
+    photoUrl: participant.photoUrl || "",
+    image: participant.photoUrl || "",
 
-  rawData: participant.rawData || {},
-  hidden: Boolean(participant.hidden),
-  saved: participant.saved || [],
-  met: participant.met || [],
-};
+    rawData: participant.rawData || {},
+    hidden: Boolean(participant.hidden),
+    saved: participant.saved || [],
+    met: participant.met || [],
+  };
 }
 
-async function getParticipantById(id) {
+async function getParticipantById(id, eventId) {
   const querySpec = {
-    query: "SELECT * FROM c WHERE c.id = @id",
-    parameters: [{ name: "@id", value: String(id).trim() }],
+    query: `
+      SELECT TOP 1 * FROM c
+      WHERE c.id = @id
+      AND c.eventId = @eventId
+    `,
+    parameters: [
+      { name: "@id", value: String(id).trim() },
+      { name: "@eventId", value: String(eventId).trim() },
+    ],
   };
 
   const { resources } = await container.items
@@ -89,12 +100,19 @@ async function replaceParticipant(participant) {
   return resource;
 }
 
-async function getParticipantByPhone(phone) {
+async function getParticipantByPhone(phone, eventId) {
   const normalizedPhone = normalizePhone(phone);
 
   const querySpec = {
-    query: "SELECT * FROM c WHERE c.phoneNumber = @phone",
-    parameters: [{ name: "@phone", value: normalizedPhone }],
+    query: `
+      SELECT * FROM c
+      WHERE c.eventId = @eventId
+      AND c.phoneNumber = @phone
+    `,
+    parameters: [
+      { name: "@eventId", value: eventId },
+      { name: "@phone", value: normalizedPhone },
+    ],
   };
 
   const { resources } = await container.items
@@ -105,7 +123,11 @@ async function getParticipantByPhone(phone) {
     return resources[0];
   }
 
-  const allQuery = { query: "SELECT * FROM c" };
+  const allQuery = {
+    query: "SELECT * FROM c WHERE c.eventId = @eventId",
+    parameters: [{ name: "@eventId", value: eventId }],
+  };
+
   const { resources: allParticipants } = await container.items
     .query(allQuery, { enableCrossPartitionQuery: true })
     .fetchAll();
@@ -113,17 +135,25 @@ async function getParticipantByPhone(phone) {
   return (
     allParticipants.find(
       (participant) =>
+        participant.eventId === eventId &&
         normalizePhone(participant.phoneNumber) === normalizedPhone
     ) || null
   );
 }
 
-async function getParticipantsByIds(ids) {
+async function getParticipantsByIds(ids, eventId) {
   if (!ids || !ids.length) return [];
 
   const querySpec = {
-    query: "SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.id)",
-    parameters: [{ name: "@ids", value: ids }],
+    query: `
+      SELECT * FROM c
+      WHERE c.eventId = @eventId
+      AND ARRAY_CONTAINS(@ids, c.id)
+    `,
+    parameters: [
+      { name: "@eventId", value: eventId },
+      { name: "@ids", value: ids },
+    ],
   };
 
   const { resources } = await container.items
@@ -136,7 +166,17 @@ async function getParticipantsByIds(ids) {
 // Get all participants
 router.get("/", async (req, res) => {
   try {
-    const querySpec = { query: "SELECT * FROM c" };
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const querySpec = {
+      query: "SELECT * FROM c WHERE c.eventId = @eventId",
+      parameters: [{ name: "@eventId", value: eventId }],
+    };
+
     const { resources } = await container.items
       .query(querySpec, { enableCrossPartitionQuery: true })
       .fetchAll();
@@ -153,7 +193,13 @@ router.get("/", async (req, res) => {
 // Get participant by phone
 router.get("/phone/:phone", async (req, res) => {
   try {
-    const participant = await getParticipantByPhone(req.params.phone);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantByPhone(req.params.phone, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
@@ -171,15 +217,27 @@ router.get("/phone/:phone", async (req, res) => {
 // Get participant by row number
 router.get("/number/:num", async (req, res) => {
   try {
+    const eventId = getEventIdFromRequest(req);
     const rowNumber = parseInt(req.params.num, 10);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
 
     if (isNaN(rowNumber)) {
       return res.status(400).json({ message: "Invalid row number" });
     }
 
     const querySpec = {
-      query: "SELECT TOP 1 * FROM c WHERE c.rowNumber = @rowNumber",
-      parameters: [{ name: "@rowNumber", value: rowNumber }],
+      query: `
+        SELECT TOP 1 * FROM c
+        WHERE c.eventId = @eventId
+        AND c.rowNumber = @rowNumber
+      `,
+      parameters: [
+        { name: "@eventId", value: eventId },
+        { name: "@rowNumber", value: rowNumber },
+      ],
     };
 
     const { resources } = await container.items
@@ -240,32 +298,38 @@ router.post("/", async (req, res) => {
 // Update participant profile
 router.put("/:id", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
 
     const fieldMap = {
-  name: "name",
+      name: "name",
 
-  job: "jobTitle",
-  jobTitle: "jobTitle",
+      job: "jobTitle",
+      jobTitle: "jobTitle",
 
-  academic: "academicResume",
-  academicResume: "academicResume",
+      academic: "academicResume",
+      academicResume: "academicResume",
 
-  professional: "professionalResume",
-  professionalResume: "professionalResume",
+      professional: "professionalResume",
+      professionalResume: "professionalResume",
 
-  personal: "personalResume",
-  personalResume: "personalResume",
+      personal: "personalResume",
+      personalResume: "personalResume",
 
-  image: "photoUrl",
-  photoUrl: "photoUrl",
+      image: "photoUrl",
+      photoUrl: "photoUrl",
 
-  iWantToMeet: "iWantToMeet",
-};
+      iWantToMeet: "iWantToMeet",
+    };
 
     for (const [bodyField, docField] of Object.entries(fieldMap)) {
       if (Object.prototype.hasOwnProperty.call(req.body, bodyField)) {
@@ -291,7 +355,13 @@ router.put("/:id", async (req, res) => {
 // Hide / unhide participant profile
 router.patch("/:id/privacy", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
@@ -318,7 +388,13 @@ router.patch("/:id/privacy", async (req, res) => {
 // Delete participant personal data
 router.delete("/:id", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
@@ -350,7 +426,13 @@ router.delete("/:id", async (req, res) => {
 // Get saved list ids
 router.get("/:id/saved", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
@@ -368,14 +450,20 @@ router.get("/:id/saved", async (req, res) => {
 // Get saved full data
 router.get("/:id/saved/full", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
 
     const savedIds = participant.saved || [];
-    const savedParticipants = await getParticipantsByIds(savedIds);
+    const savedParticipants = await getParticipantsByIds(savedIds, eventId);
 
     return res.json(savedParticipants.map(mapParticipant));
   } catch (error) {
@@ -389,7 +477,13 @@ router.get("/:id/saved/full", async (req, res) => {
 // Get met list ids
 router.get("/:id/met", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
@@ -407,14 +501,20 @@ router.get("/:id/met", async (req, res) => {
 // Get met full data
 router.get("/:id/met/full", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
 
     const metIds = participant.met || [];
-    const metParticipants = await getParticipantsByIds(metIds);
+    const metParticipants = await getParticipantsByIds(metIds, eventId);
 
     return res.json(metParticipants.map(mapParticipant));
   } catch (error) {
@@ -428,18 +528,23 @@ router.get("/:id/met/full", async (req, res) => {
 // Save participant
 router.post("/:id/save/:targetId", async (req, res) => {
   try {
+    const eventId = getEventIdFromRequest(req);
     const { id, targetId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
 
     if (id === targetId) {
       return res.status(400).json({ message: "Cannot save yourself" });
     }
 
-    const participant = await getParticipantById(id);
+    const participant = await getParticipantById(id, eventId);
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
 
-    const targetParticipant = await getParticipantById(targetId);
+    const targetParticipant = await getParticipantById(targetId, eventId);
     if (!targetParticipant) {
       return res.status(404).json({ message: "Target participant not found" });
     }
@@ -467,9 +572,14 @@ router.post("/:id/save/:targetId", async (req, res) => {
 // Unsave participant
 router.delete("/:id/save/:targetId", async (req, res) => {
   try {
+    const eventId = getEventIdFromRequest(req);
     const { id, targetId } = req.params;
 
-    const participant = await getParticipantById(id);
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(id, eventId);
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
@@ -495,18 +605,23 @@ router.delete("/:id/save/:targetId", async (req, res) => {
 // Mark met
 router.post("/:id/met/:targetId", async (req, res) => {
   try {
+    const eventId = getEventIdFromRequest(req);
     const { id, targetId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
 
     if (id === targetId) {
       return res.status(400).json({ message: "Cannot mark yourself as met" });
     }
 
-    const participant = await getParticipantById(id);
+    const participant = await getParticipantById(id, eventId);
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
 
-    const targetParticipant = await getParticipantById(targetId);
+    const targetParticipant = await getParticipantById(targetId, eventId);
     if (!targetParticipant) {
       return res.status(404).json({ message: "Target participant not found" });
     }
@@ -534,9 +649,14 @@ router.post("/:id/met/:targetId", async (req, res) => {
 // Unmark met
 router.delete("/:id/met/:targetId", async (req, res) => {
   try {
+    const eventId = getEventIdFromRequest(req);
     const { id, targetId } = req.params;
 
-    const participant = await getParticipantById(id);
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(id, eventId);
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
     }
@@ -562,7 +682,13 @@ router.delete("/:id/met/:targetId", async (req, res) => {
 // Get participant by id
 router.get("/:id", async (req, res) => {
   try {
-    const participant = await getParticipantById(req.params.id);
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
 
     if (!participant) {
       return res.status(404).json({ message: "Participant not found" });
