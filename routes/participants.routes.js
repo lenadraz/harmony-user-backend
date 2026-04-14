@@ -281,6 +281,7 @@ router.post("/", async (req, res) => {
       hidden: false,
       saved: [],
       met: [],
+      skipped: [],
     };
 
     await container.items.create(newParticipant);
