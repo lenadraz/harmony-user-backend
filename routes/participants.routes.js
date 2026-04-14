@@ -69,6 +69,7 @@ function mapParticipant(participant) {
     hidden: Boolean(participant.hidden),
     saved: participant.saved || [],
     met: participant.met || [],
+    skipped: participant.skipped || [],
   };
 }
 
@@ -678,6 +679,101 @@ router.delete("/:id/met/:targetId", async (req, res) => {
     });
   }
 });
+router.get("/:id/skipped", async (req, res) => {
+  try {
+    const eventId = getEventIdFromRequest(req);
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(req.params.id, eventId);
+
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    return res.json({ skipped: participant.skipped || [] });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Get skipped failed",
+      error: error.message,
+    });
+  }
+});
+router.post("/:id/skipped/:targetId", async (req, res) => {
+  try {
+    const eventId = getEventIdFromRequest(req);
+    const { id, targetId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    if (id === targetId) {
+      return res.status(400).json({ message: "Cannot skip yourself" });
+    }
+
+    const participant = await getParticipantById(id, eventId);
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    const targetParticipant = await getParticipantById(targetId, eventId);
+    if (!targetParticipant) {
+      return res.status(404).json({ message: "Target participant not found" });
+    }
+
+    participant.skipped = participant.skipped || [];
+
+    if (!participant.skipped.includes(targetId)) {
+      participant.skipped.push(targetId);
+    }
+
+    const updated = await replaceParticipant(participant);
+
+    return res.json({
+      message: "Skipped successfully",
+      skipped: updated.skipped,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Skip failed",
+      error: error.message,
+    });
+  }
+});
+router.delete("/:id/skipped/:targetId", async (req, res) => {
+  try {
+    const eventId = getEventIdFromRequest(req);
+    const { id, targetId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({ message: "eventId is required" });
+    }
+
+    const participant = await getParticipantById(id, eventId);
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+
+    participant.skipped = (participant.skipped || []).filter(
+      (item) => item !== targetId
+    );
+
+    const updated = await replaceParticipant(participant);
+
+    return res.json({
+      message: "Removed from skipped successfully",
+      skipped: updated.skipped,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Unskip failed",
+      error: error.message,
+    });
+  }
+});
 
 // Get participant by id
 router.get("/:id", async (req, res) => {
@@ -704,27 +800,4 @@ router.get("/:id", async (req, res) => {
 });
 
 module.exports = router;
-router.post("/skipped", async (req, res) => {
-  try {
-    const { userId, targetId, remove } = req.body;
 
-    const { resource } = await container.item(userId, userId).read();
-
-    resource.skipped = resource.skipped || [];
-
-    if (remove) {
-      resource.skipped = resource.skipped.filter(id => id !== targetId);
-    } else {
-      if (!resource.skipped.includes(targetId)) {
-        resource.skipped.push(targetId);
-      }
-    }
-
-    await container.item(userId, userId).replace(resource);
-
-    res.json({ skipped: resource.skipped });
-
-  } catch (err) {
-    res.status(500).json({ message: "Skip failed", error: err.message });
-  }
-});
