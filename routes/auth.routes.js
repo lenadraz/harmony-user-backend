@@ -13,14 +13,17 @@ function normalizePhone(value) {
 
   s = s.replace(/[^\d+]/g, "");
 
+  // המרה מ־972 ל־0
   if (s.startsWith("+972")) {
     s = "0" + s.slice(4);
   } else if (s.startsWith("972")) {
     s = "0" + s.slice(3);
   }
 
-  if (s.length === 9 && !s.startsWith("0")) {
-    s = "0" + s;
+  // 💥 זה הכי חשוב
+  // מורידים 0 כדי להתאים ל־DB
+  if (s.startsWith("0")) {
+    s = s.slice(1);
   }
 
   return s;
